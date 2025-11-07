@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zasedací pořádek – dynamické řady/sloupce + zámky + tisk/PNG</title>
+<style>
+  :root{
+    --bg:#0f1722; --panel:#111827; --muted:#94a3b8; --accent:#60a5fa; --ok:#22c55e; --warn:#f59e0b; --err:#ef4444;
+    --card:#0b1220; --chip:#1f2937; --text:#e6eef8; --chip-b:#273142;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#0a1223,#0f1722);color:var(--text);font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif}
+  .app{display:grid;grid-template-columns:420px 1fr;gap:14px;padding:14px;height:100vh}
+  @media (max-width:1100px){ .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto} }
+  .panel{background:rgba(10,14,20,.6);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);padding:14px}
+  h1{font-size:18px;margin:0 0 10px}
+  h2{font-size:14px;margin:16px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .controls .row{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap}
+  select, input[type=text], textarea, input[type=number]{background:#0e1626;color:var(--text);border:1px solid #1f2a3a;border-radius:8px;padding:8px 10px;outline:none}
+  select:focus, input[type=text]:focus, textarea:focus, input[type=number]:focus{border-color:var(--accent)}
+  button{background:#1b283a;color:var(--text);border:1px solid #243448;border-radius:10px;padding:10px 12px;cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.35);transition:.12s}
+  button:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.35)}
+  .primary{background:linear-gradient(180deg,#2b5ca8,#1e3f77);border-color:#345b88}
+  .danger{background:linear-gradient(180deg,#933,#722);border-color:#844}
+  .ok{background:linear-gradient(180deg,#1d6f3d,#14532d);border-color:#1e7a43}
+  .muted{opacity:.85}
+  .students{display:grid;grid-template-columns:1fr 110px 40px;gap:6px;align-items:center}
+  .chip{background:var(--chip);border:1px solid var(--chip-b);border-radius:999px;padding:4px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .dot-boy{background:#60a5fa}.dot-girl{background:#f472b6}
+  .grid{background:linear-gradient(180deg,#0b1220,#0a111d);border-radius:12px;padding:12px;height:100%;display:grid;grid-template-rows:auto 1fr;gap:10px}
+  .deskgrid{display:grid;grid-template-columns:repeat(var(--cols,3),1fr);gap:12px;align-content:start}
+  .desk{background:#0b1424;border:1px solid #152036;border-radius:12px;padding:10px;display:grid;grid-template-rows:auto auto;gap:8px;position:relative}
+  .desk::after{content:attr(data-label);position:absolute;top:8px;right:10px;font-size:11px;color:#7f8da3}
+  .seats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .seat{background:#0e1a2e;border:1px solid #1a2942;border-radius:10px;min-height:58px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:6px;text-align:center}
+  .seat.lock-student{border-color:#f59e0b;box-shadow:inset 0 0 0 1px #f59e0b66}
+  .seat.lock-block{border-color:#ef4444;box-shadow:inset 0 0 0 1px #ef444466}
+  .seat .name{font-weight:600}
+  .seat .sub{font-size:12px;color:#8aa1bd}
+  .legend{display:flex;gap:8px;flex-wrap:wrap}
+  .help{font-size:12px;color:#a7b6cf}
+  .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0d1b32;border:1px solid #21314a;padding:10px 14px;border-radius:999px;display:none}
+  .seat.drag-ok{outline:2px dashed #60a5fa; outline-offset:2px}
+  .seat.drag-blocked{outline:2px dashed #ef4444; outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <h1>Zasedací pořádek</h1>
+    <div class="help">Klik na místo → posadit/přesadit, <b>uzamknout žáka</b> nebo <b>zakázat prázdné místo</b>. Přetažením přesazuj.</div>
+
+    <h2>Rozvržení třídy</h2>
+    <div class="controls">
+      <div class="row">
+        <label>Řady:</label>
+        <input id="rowsInput" type="number" min="1" max="12" step="1" value="6" style="width:90px">
+        <label>Sloupce:</label>
+        <input id="colsInput" type="number" min="1" max="8" step="1" value="3" style="width:90px">
+        <button id="applyLayout" class="primary">Použít</button>
+        <span class="chip muted" id="layoutInfo">3 sloupce × 6 řad • 2 místa / lavice</span>
+      </div>
+    </div>
+
+    <h2>Seznam žáků</h2>
+    <div id="students" class="students"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <input id="newName" type="text" placeholder="Jméno a příjmení" style="flex:1 1 160px">
+      <select id="newGender">
+        <option value="M">Kluk</option>
+        <option value="F">Holka</option>
+      </select>
+      <button class="primary" id="btnAdd">Přidat</button>
+      <button class="danger" id="btnClear">Vyprázdnit seznam</button>
+    </div>
+
+    <h2>Hromadný import</h2>
+    <div class="help">Každý řádek: <code>Jméno; M</code> nebo <code>Jméno; F</code></div>
+    <textarea id="bulk" rows="6" placeholder="Anna Svobodová; F&#10;Petr Dvořák; M" style="width:100%;margin-top:6px"></textarea>
+    <div class="controls">
+      <div class="row"><button id="btnBulk" class="ok">Přidat z textu</button></div>
+    </div>
+
+    <h2>Nastavení generování</h2>
+    <div class="controls">
+      <div class="row">
+        <label for="mode" style="min-width:160px">Režim párů:</label>
+        <select id="mode">
+          <option value="mixed">Kluk–holka (striktní)</option>
+          <option value="any">Libovolné (KK, HH i KH)</option>
+        </select>
+      </div>
+      <div class="row">
+        <span class="chip" id="countInfo"><span class="dot dot-boy"></span> M:0 &nbsp; <span class="dot dot-girl"></span> F:0 &nbsp; | &nbsp; Celkem: 0</span>
+      </div>
+      <div class="row" style="gap:6px;flex-wrap:wrap">
+        <button class="primary" id="btnGenerate">Generovat</button>
+        <button id="btnUnassign">Vyčistit přiřazení (ponechat zámky/zakázaná)</button>
+        <button id="btnExportPrint">Tisk plánku (A4)</button>
+        <button id="btnExportPng">Exportovat PNG plánku</button>
+        <button id="btnSaveHtml">Uložit jako HTML</button>
+      </div>
+      <div class="help">Tisk: čistý plánek lavic na A4 (na šířku). „Uložit jako HTML“: stáhne soubor se stavem.</div>
+    </div>
+  </aside>
+
+  <main class="grid">
+    <div class="legend">
+      <span class="chip"><span class="dot dot-boy"></span> Kluk</span>
+      <span class="chip"><span class="dot dot-girl"></span> Holka</span>
+      <span class="chip" title="Uzamčený konkrétní žák (nemění se)" style="border:1px solid #f59e0b;color:#ffd288">🔒 Uzamčený žák</span>
+      <span class="chip" title="Prázdné místo je zakázané (nikdo sem nesmí)" style="border:1px solid #ef4444;color:#ffb4b4">⛔ Zakázané místo</span>
+      <span class="chip" id="legendLayout">Lavice: 3 × 6 • 2 místa</span>
+    </div>
+    <div id="deskgrid" class="deskgrid"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ====== STAV A MODELY ======
+  let ROWS = 6;
+  let COLS = 3;
+
+  // lock: 'none' | 'student' | 'blocked'
+  let seats = [];          // {id,row,col,side,name,gender,lock}
+  const students = [];     // {id,name,gender}
+  let uid = 1;
+
+  // ====== PŘÍPADNÝ PŘEDÁNÝ STAV (z „Uložit jako HTML“) ======
+  let injectedState = null;
+  {
+    const el = document.getElementById('__STATE__');
+    if (el && el.textContent) {
+      try { injectedState = JSON.parse(el.textContent); } catch(e) { injectedState = null; }
+    }
+  }
+  if (!injectedState && typeof window.__STATE__ !== 'undefined') {
+    injectedState = window.__STATE__;
+  }
+
+  const LS_KEY = 'seatplan_v2'; // autosave klíč
+
+  const $ = s => document.querySelector(s);
+  const el = (tag, attrs={}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k,v] of Object.entries(attrs)){
+      if(k==='class') e.className = v;
+      else if(k==='html') e.innerHTML = v;
+      else if(k.startsWith('on') && typeof v === 'function') e.addEventListener(k.substring(2), v);
+      else e.setAttribute(k, v);
+    }
+    kids.forEach(k => { if(k!=null) e.append(k); });
+    return e;
+  };
+  const toast = (msg, ms=2200) => {
+    const t = $('#toast'); t.textContent = msg; t.style.display='block';
+    clearTimeout(toast._t); toast._t = setTimeout(()=>t.style.display='none', ms);
+  };
+  const shuffle = (arr) => { for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; };
+
+  const seatId = (r,c,side) => `R${r}C${c}${side}`;
+  const byId   = id => seats.find(s=>s.id===id);
+  const mateId = s  => seatId(s.row, s.col, s.side==='L'?'R':'L');
+
+  // ---- Pomocné pro DnD ----
+  function seatOfStudent(name){
+    return seats.find(s => s.name === name) || null;
+  }
+  function canDropStudentToSeat(studentName, target){
+    if (target.lock === 'blocked') return [false, 'Místo je zakázané.'];
+    if (target.lock === 'student' && target.name && target.name !== studentName) return [false, 'Místo je uzamčeno pro jiného žáka.'];
+    const src = seatOfStudent(studentName);
+    if (src && src.lock === 'student' && src.id !== target.id) {
+      return [false, 'Tento žák je uzamčen na svém místě.'];
+    }
+    return [true, ''];
+  }
+  function moveStudentToSeat(studentName, target){
+    const src = seatOfStudent(studentName);
+    const dst = target;
+
+    if (dst.name && dst.name !== studentName){
+      if (dst.lock === 'student' && dst.name !== studentName){
+        toast('Cílové místo je uzamčeno.'); return false;
+      }
+      if (src && src.lock === 'student'){
+        toast('Zdrojové místo je uzamčeno.'); return false;
+      }
+      const otherName = dst.name;
+      const other = students.find(x=>x.name===otherName);
+      const me    = students.find(x=>x.name===studentName);
+
+      if (src){ src.name = otherName; src.gender = other?other.gender:null; }
+      dst.name = studentName; dst.gender = me?me.gender:null;
+      return true;
+    }
+
+    const me = students.find(x=>x.name===studentName);
+    if (src){ src.name=null; src.gender=null; if(src.lock==='student') src.lock='none'; }
+    dst.name = studentName; dst.gender = me?me.gender:null;
+    return true;
+  }
+
+  // ====== SEATS: VYTVOŘENÍ / REBUILD ======
+  function makeEmptySeats(rows, cols){
+    const arr = [];
+    for(let r=1;r<=rows;r++){
+      for(let c=1;c<=cols;c++){
+        arr.push({id:seatId(r,c,'L'), row:r, col:c, side:'L', name:null, gender:null, lock:'none'});
+        arr.push({id:seatId(r,c,'R'), row:r, col:c, side:'R', name:null, gender:null, lock:'none'});
+      }
+    }
+    return arr;
+  }
+
+  function rebuildSeats(newRows, newCols){
+    const old = seats;
+    const next = makeEmptySeats(newRows, newCols);
+    next.forEach(s=>{
+      const prev = old.find(p=>p.id===s.id);
+      if(prev){ s.name=prev.name; s.gender=prev.gender; s.lock=prev.lock; }
+    });
+    seats = next;
+    ROWS = newRows; COLS = newCols;
+    document.documentElement.style.setProperty('--cols', String(COLS));
+    $('#layoutInfo').textContent = `${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`;
+    $('#legendLayout').textContent = `Lavice: ${COLS} × ${ROWS} • 2 místa`;
+    renderGrid();
+    autosave();
+  }
+
+  // ====== STUDENTS UI ======
+  function renderStudents(){
+    const box = $('#students'); box.innerHTML = '';
+    students.forEach(st => {
+      const name = el('input',{
+        type:'text',
+        value:st.name,
+        draggable:true,
+        ondragstart:e=>{
+          const payload = JSON.stringify({type:'student', id: st.id});
+          e.dataTransfer.setData('application/x-seatplan', payload);
+          e.dataTransfer.setData('text/plain', payload); // fallback pro některé prohlížeče
+          e.dataTransfer.effectAllowed = 'move';
+        },
+        oninput:e=>{
+          st.name=e.target.value; syncLockedGenders(); renderGrid(); updateCounts(); autosave();
+        }
+      });
+      const gen = el('select',{onchange:e=>{ st.gender=e.target.value; syncLockedGenders(); renderGrid(); updateCounts(); autosave(); }},
+        el('option',{value:'M', ...(st.gender==='M'?{selected:true}:{})}, 'Kluk'),
+        el('option',{value:'F', ...(st.gender==='F'?{selected:true}:{})}, 'Holka')
+      );
+      const del = el('button',{class:'danger', onclick:()=>{ removeStudent(st.id); autosave(); }}, '×');
+      box.append(name, gen, del);
+    });
+    updateCounts();
+  }
+  function updateCounts(){
+    const m = students.filter(s=>s.gender==='M').length;
+    const f = students.filter(s=>s.gender==='F').length;
+    $('#countInfo').textContent = `M:${m}   F:${f}   |   Celkem: ${students.length}`;
+  }
+  function addStudent(name, gender){
+    if(!name || !name.trim()) return;
+    students.push({id:uid++, name:name.trim(), gender:(gender==='F'?'F':'M')});
+    renderStudents(); autosave();
+  }
+  function removeStudent(id){
+    const st = students.find(s=>s.id===id);
+    if(st){
+      seats.forEach(seat=>{
+        if(seat.name === st.name){
+          seat.name = null; seat.gender = null;
+          if(seat.lock==='student') seat.lock='none';
+        }
+      });
+    }
+    const i = students.findIndex(s=>s.id===id);
+    if(i>=0) students.splice(i,1);
+    renderStudents(); renderGrid();
+  }
+  function syncLockedGenders(){
+    seats.forEach(s=>{
+      if(s.lock==='student' && s.name){
+        const st = students.find(x=>x.name===s.name);
+        if(st) s.gender = st.gender;
+      }
+    });
+  }
+
+  // ====== GRID ======
+  function renderGrid(){
+    const g = $('#deskgrid'); g.innerHTML = '';
+    for(let r=1;r<=ROWS;r++){
+      for(let c=1;c<=COLS;c++){
+        const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
+        const box = el('div',{class:'desk','data-label':`Ř${r} • Sl${c}`});
+        const seatsWrap = el('div',{class:'seats'}, renderSeat(L), renderSeat(R));
+        box.append(seatsWrap);
+        g.append(box);
+      }
+    }
+  }
+  function renderSeat(s){
+    const cls =
+      s.lock==='student' ? 'seat lock-student' :
+      s.lock==='blocked' ? 'seat lock-block' : 'seat';
+
+    const seatEl = el('div',{class:cls});
+    if (s.name) seatEl.setAttribute('draggable','true');
+
+    let subText = 'volné';
+    if(s.lock==='student' && s.name) subText = 'uzamčeno';
+    else if(s.lock==='blocked')     subText = 'zakázáno';
+    else if(s.gender)               subText = (s.gender==='M'?'kluk':'holka');
+
+    seatEl.append(el('div',{class:'name'}, s.name || (s.lock==='blocked'?'⛔ —':'—')));
+    seatEl.append(el('div',{class:'sub'}, subText));
+
+    seatEl.addEventListener('click', ()=> seatMenu(s, seatEl));
+
+    // DRAG start z místa (fallback MIME)
+    seatEl.addEventListener('dragstart', e=>{
+      if (!s.name) { e.preventDefault(); return; }
+      const payload = JSON.stringify({type:'seat', seatId: s.id, studentName: s.name});
+      e.dataTransfer.setData('application/x-seatplan', payload);
+      e.dataTransfer.setData('text/plain', payload); // fallback
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    // DRAGOVER: vždy preventDefault + dropEffect, vizuální indikace validity
+    seatEl.addEventListener('dragover', e=>{
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      seatEl.classList.remove('drag-ok','drag-blocked');
+
+      const raw = e.dataTransfer.getData('application/x-seatplan') || e.dataTransfer.getData('text/plain');
+      if(!raw) return;
+      try{
+        const data = JSON.parse(raw);
+        let studentName = null;
+        if(data.type==='student'){ const st = students.find(x=>x.id===data.id); studentName = st?st.name:null; }
+        else if(data.type==='seat'){ studentName = data.studentName; }
+        if(!studentName) return;
+        const [ok] = canDropStudentToSeat(studentName, s);
+        seatEl.classList.add(ok ? 'drag-ok' : 'drag-blocked');
+      }catch(_){}
+    });
+
+    seatEl.addEventListener('dragleave', ()=>{
+      seatEl.classList.remove('drag-ok','drag-blocked');
+    });
+
+    // DROP: načti payload (s fallbackem), ověř a přesuň
+    seatEl.addEventListener('drop', e=>{
+      e.preventDefault();
+      seatEl.classList.remove('drag-ok','drag-blocked');
+
+      const raw = e.dataTransfer.getData('application/x-seatplan') || e.dataTransfer.getData('text/plain');
+      if(!raw) return;
+      try{
+        const data = JSON.parse(raw);
+        let studentName = null;
+        if(data.type==='student'){ const st = students.find(x=>x.id===data.id); studentName = st?st.name:null; }
+        else if(data.type==='seat'){ studentName = data.studentName; }
+        if(!studentName) return;
+
+        const [ok,msg] = canDropStudentToSeat(studentName, s);
+        if(!ok){ if(msg) toast(msg); return; }
+
+        if (moveStudentToSeat(studentName, s)){
+          renderGrid(); autosave();
+        }
+      }catch(_){}
+    });
+
+    return seatEl;
+  }
+
+  // ====== MENU SEDADEL ======
+  function seatMenu(seat, anchor){
+    const menu = el('div',{style:'position:absolute;z-index:10;background:#0d1629;border:1px solid #1a2942;border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.5);padding:10px;min-width:240px;'});
+    const close = ()=>{ menu.remove(); document.removeEventListener('click', onDoc); autosave(); };
+    const onDoc = (e)=>{ if(!menu.contains(e.target)) close(); };
+    setTimeout(()=>document.addEventListener('click', onDoc, {once:true}), 0);
+
+    const sel = el('select',{style:'width:100%;margin-bottom:8px'});
+    sel.append(el('option',{value:''}, '(vybrat žáka)'));
+    const assignedNames = new Set(seats.filter(s=>s.name).map(s=>s.name));
+    const unassigned = students.filter(st=>!assignedNames.has(st.name) || st.name===seat.name);
+    const current = students.find(st=>st.name===seat.name);
+    if(current) unassigned.unshift(current);
+    unassigned.forEach(st=>{
+      const label = `${st.name} – ${st.gender==='M'?'K':'H'}`;
+      sel.append(el('option',{value:String(st.id), ...(seat.name===st.name?{selected:true}:{})}, label));
+    });
+
+    const btnAssign = el('button',{class:'primary', style:'width:100%;margin-bottom:6px', onclick:()=>{
+      const idStr = sel.value;
+      if(!idStr){ toast('Vyber žáka.'); return; }
+      const id = Number(idStr);
+      const st = students.find(x=>x.id===id);
+      if(seat.lock==='blocked'){ seat.lock='none'; }
+      seats.forEach(s=>{ if(s.name===st.name){ s.name=null; s.gender=null; if(s.lock==='student') s.lock='none'; }});
+      seat.name = st.name; seat.gender = st.gender;
+      renderGrid(); close();
+    }}, seat.name ? 'Přesadit žáka' : 'Posadit žáka');
+
+    const btnClear = el('button',{style:'width:100%;margin-bottom:6px', onclick:()=>{
+      if(seat.lock==='student') seat.lock='none';
+      seat.name=null; seat.gender=null;
+      renderGrid(); close();
+    }}, 'Vyprázdnit místo');
+
+    const btnLockStudent = el('button',{style:'width:100%;margin-bottom:6px', onclick:()=>{
+      if(!seat.name){ toast('Pro uzamčení žáka nejprve posaď žáka.'); return; }
+      seat.lock = (seat.lock==='student' ? 'none' : 'student');
+      renderGrid(); close();
+    }}, seat.lock==='student' ? 'Odemknout žáka' : 'Uzamknout tohoto žáka');
+
+    const btnBlockEmpty = el('button',{style:'width:100%;', onclick:()=>{
+      if(seat.lock==='blocked'){
+        seat.lock='none';
+      } else {
+        seat.name=null; seat.gender=null; seat.lock='blocked';
+      }
+      renderGrid(); close();
+    }}, seat.lock==='blocked' ? 'Povolit místo (zrušit zákaz)' : 'Zamknout prázdné místo (zakázat)');
+
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top = (window.scrollY + rect.top + rect.height + 6) + 'px';
+    menu.style.left = (window.scrollX + rect.left) + 'px';
+    menu.append(sel, btnAssign, btnClear, btnLockStudent, btnBlockEmpty);
+    document.body.append(menu);
+  }
+
+  // ====== GENEROVÁNÍ ======
+  function generate(){
+    const mode = $('#mode').value; // 'mixed' | 'any'
+    const lockedStudentNames = new Set(seats.filter(s=>s.lock==='student' && s.name).map(s=>s.name));
+    const pool = students.filter(st => !lockedStudentNames.has(st.name));
+
+    seats.forEach(s=>{
+      if(s.lock!=='student'){
+        if(s.lock==='blocked'){ s.name=null; s.gender=null; }
+        else { s.name=null; s.gender=null; }
+      } else {
+        const st = students.find(x=>x.name===s.name);
+        if(st) s.gender = st.gender;
+      }
+    });
+
+    const desks = [];
+    for(let r=1;r<=ROWS;r++){
+      for(let c=1;c<=COLS;c++){
+        desks.push({L:byId(seatId(r,c,'L')), R:byId(seatId(r,c,'R'))});
+      }
+    }
+
+    if(mode==='mixed'){
+      let conflict = 0, needM = 0, needF = 0;
+      desks.forEach(d=>{
+        const gL = (d.L.lock==='student' && d.L.name) ? d.L.gender : null;
+        const gR = (d.R.lock==='student' && d.R.name) ? d.R.gender : null;
+        if(gL && gR && gL===gR) conflict++;
+        if(gL && !gR && d.R.lock!=='blocked') (gL==='M') ? needF++ : needM++;
+        if(gR && !gL && d.L.lock!=='blocked') (gR==='M') ? needF++ : needM++;
+      });
+      if(conflict>0){ toast('Konflikt: v jedné lavici jsou uzamčeni dva stejného pohlaví (režim kluk–holka).'); return; }
+      const free = pool.reduce((a,s)=>{ s.gender==='M'?a.M++:a.F++; return a; }, {M:0,F:0});
+      if(free.M < needM || free.F < needF){
+        toast('Nedostatek kluků/holek pro režim kluk–holka vzhledem k uzamčeným místům.'); return;
+      }
+    }
+
+    const assigned = new Map();
+    const freeStudents = pool.slice(); shuffle(freeStudents);
+
+    const allSeats = [];
+    desks.forEach(d=>{ allSeats.push(d.L, d.R); });
+    const toFill = allSeats.filter(s => !(s.lock==='student' && s.name) && s.lock!=='blocked');
+
+    seats.forEach(s=>{
+      if(s.lock==='student' && s.name) assigned.set(s.id, {name:s.name, gender:s.gender});
+      if(s.lock==='blocked') assigned.set(s.id, {name:null, gender:null});
+    });
+
+    function canPlace(seat, student){
+      if(seat.lock==='blocked') return false;
+      if(seat.lock==='student' && seat.name && seat.name!==student.name) return false;
+      for(const v of assigned.values()){ if(v.name===student.name) return false; }
+      if(mode==='mixed'){
+        const mate = byId(mateId(seat));
+        const mVal = assigned.get(mate.id) || ( (mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null );
+        if(mVal && mVal.gender && mVal.gender === student.gender) return false;
+      }
+      return true;
+    }
+
+    function bt(i){
+      if(i>=toFill.length) return true;
+      const seat = toFill[i];
+      let candidates = freeStudents.filter(st => canPlace(seat, st));
+      if(mode==='mixed'){
+        const mate = byId(mateId(seat));
+        const mVal = assigned.get(mate.id) || ( (mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null );
+        if(mVal && mVal.gender){
+          const need = mVal.gender==='M'?'F':'M';
+          candidates = candidates.sort((a,b)=> (a.gender===need? -1:0) - (b.gender===need? -1:0));
+        } else { shuffle(candidates); }
+      } else { shuffle(candidates); }
+
+      const remainingSeats = toFill.length - i;
+      if(freeStudents.length < remainingSeats) candidates = candidates.concat([null]);
+
+      for(const cand of candidates){
+        if(cand===null){
+          assigned.set(seat.id, {name:null, gender:null});
+          if(bt(i+1)) return true;
+          assigned.delete(seat.id);
+          continue;
+        }
+        assigned.set(seat.id, {name:cand.name, gender:cand.gender});
+        const idx = freeStudents.findIndex(s=>s.id===cand.id);
+        const rem = freeStudents.splice(idx,1)[0];
+        if(bt(i+1)) return true;
+        freeStudents.splice(idx,0,rem);
+        assigned.delete(seat.id);
+      }
+      return false;
+    }
+
+    const ok = bt(0);
+    if(!ok){ toast('Nepodařilo se najít uspořádání s danými omezeními.'); return; }
+
+    seats.forEach(s=>{
+      const v = assigned.get(s.id);
+      if(v){
+        s.name = v.name; s.gender = v.gender;
+      } else if(!(s.lock==='student' && s.name) && s.lock!=='blocked'){
+        s.name = null; s.gender = null;
+      }
+    });
+
+    renderGrid(); autosave();
+    toast('Hotovo: zasedací pořádek vygenerován.');
+  }
+
+  function unassign(){
+    seats.forEach(s=>{
+      if(s.lock==='student' && s.name) return;
+      if(s.lock==='blocked'){ s.name=null; s.gender=null; return; }
+      s.name=null; s.gender=null;
+    });
+    renderGrid(); autosave(); toast('Přiřazení vyčištěno (zámky a zákazy ponechány).');
+  }
+
+  // ====== TISK – plánek s JMÉNY ======
+  function printPlan(){
+    const w = window.open('', '_blank');
+
+    let gridHtml = `<div class="grid" style="display:grid;grid-template-columns:repeat(${COLS},1fr);gap:6mm">`;
+    for(let r=1;r<=ROWS;r++){
+      for(let c=1;c<=COLS;c++){
+        const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
+        const cell = (s) => `
+          <div class="seat ${s.lock==='blocked'?'blocked':''}" style="border:1px solid #000;height:14mm;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:10pt;position:relative">
+            ${s.lock==='blocked' ? '' : (s.name ? s.name : '')}
+          </div>`;
+        gridHtml += `
+          <div class="desk" style="border:1px solid #000;padding:4mm;display:grid;grid-template-columns:1fr 1fr;gap:4mm;min-height:20mm;position:relative">
+            ${cell(L)}${cell(R)}
+            <div style="position:absolute;top:-7mm;right:0;font:9pt Arial">Ř${r} • Sl${c}</div>
+          </div>`;
+      }
+    }
+    gridHtml += '</div>';
+
+    const head = `
+      <title>Plánek lavic</title>
+      <style>
+        @page { size: A4 landscape; margin: 10mm; }
+        html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+        .header{display:flex;justify-content:center;align-items:center;margin-bottom:8mm}
+        .board{border:2px solid #000;padding:6px 14px;font-weight:700;letter-spacing:.08em}
+        .blocked{background:#eee;position:relative}
+        .blocked::after{content:"X";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700}
+        .foot{margin-top:8mm;font-size:10pt;display:flex;justify-content:space-between}
+      </style>`;
+    const board = '<div class="header"><div class="board">TABULE</div></div>';
+    const foot  = `<div class="foot"><div>${COLS} sloupce × ${ROWS} řad • 2 místa / lavice</div><div>Legenda: X = zakázané místo</div></div>`;
+
+    w.document.write(`<!doctype html><html><head>${head}</head><body>${board}${gridHtml}${foot}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  }
+
+  // ====== EXPORT PNG – kreslení s JMÉNY ======
+  function exportPng(){
+    const deskW = 280, deskH = 120;
+    const seatW = (deskW - 24) / 2, seatH = 54;
+    const gap   = 18, pad = 36, headH = 70, footH = 40;
+
+    const W = pad*2 + COLS*deskW + (COLS-1)*gap;
+    const H = pad*2 + headH + ROWS*deskH + (ROWS-1)*gap + footH;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(800, W);
+    canvas.height = Math.max(400, H);
+    const ctx = canvas.getContext('2d');
+
+    // pozadí
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#000000';
+    ctx.lineWidth = 2;
+
+    // nadpis "TABULE"
+    ctx.strokeRect((canvas.width-150)/2, pad, 150, 32);
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TABULE', canvas.width/2, pad+16);
+
+    function drawNameInBox(text, x, y, w, h){
+      if(!text){ return; }
+      let size = 14;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      do {
+        ctx.font = `bold ${size}px Arial`;
+        if (ctx.measureText(text).width <= w - 10 || size <= 8) break;
+        size -= 1;
+      } while (size > 8);
+      ctx.fillText(text, x + w/2, y + h/2);
+    }
+
+    // mřížka lavic
+    let y0 = pad + headH;
+    for(let r=1;r<=ROWS;r++){
+      let x0 = pad;
+      for(let c=1;c<=COLS;c++){
+        ctx.strokeRect(x0, y0, deskW, deskH);
+        const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
+        const seatX = [x0+8, x0+8+seatW+8], seatY = y0+8;
+
+        [L,R].forEach((s, i)=>{
+          ctx.strokeRect(seatX[i], seatY, seatW, seatH);
+          if(s.lock==='blocked'){
+            ctx.save();
+            ctx.fillStyle = '#eeeeee';
+            ctx.fillRect(seatX[i], seatY, seatW, seatH);
+            ctx.restore();
+            ctx.beginPath();
+            ctx.moveTo(seatX[i]+6, seatY+6);
+            ctx.lineTo(seatX[i]+seatW-6, seatY+seatH-6);
+            ctx.moveTo(seatX[i]+seatW-6, seatY+6);
+            ctx.lineTo(seatX[i]+6, seatY+seatH-6);
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = '#000000';
+            drawNameInBox(s.name || '', seatX[i], seatY, seatW, seatH);
+          }
+        });
+
+        ctx.font = '10px Arial';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(`Ř${r} • Sl${c}`, x0 + deskW, y0 - 6);
+
+        x0 += deskW + gap;
+      }
+      y0 += deskH + gap;
+    }
+
+    // patička
+    ctx.font = '12px Arial';
+    ctx.textAlign = 'left';  ctx.fillText(`${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`, pad, canvas.height - pad - 10);
+    ctx.textAlign = 'right'; ctx.fillText(`Legenda: X = zakázané místo`, canvas.width - pad, canvas.height - pad - 10);
+
+    const a = document.createElement('a');
+    a.download = 'planek-lavic.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    toast('PNG plánku uložen.');
+  }
+
+  // ====== „ULOŽIT JAKO HTML“ (samostatný soubor se stavem) ======
+  function getState(){
+    return {
+      rows: ROWS, cols: COLS,
+      students: students.map(s=>({id:s.id, name:s.name, gender:s.gender})),
+      seats: seats.map(s=>({id:s.id, row:s.row, col:s.col, side:s.side, name:s.name, gender:s.gender, lock:s.lock}))
+    };
+  }
+  function setState(st){
+    ROWS = st.rows; COLS = st.cols;
+    document.documentElement.style.setProperty('--cols', String(COLS));
+    seats = makeEmptySeats(ROWS, COLS);
+    students.splice(0, students.length);
+    uid = 1;
+    st.students.forEach(x=>{ students.push({id:uid++, name:x.name, gender:x.gender}); });
+    st.seats.forEach(src=>{
+      const dst = seats.find(d=>d.id===src.id);
+      if(dst){ dst.name=src.name; dst.gender=src.gender; dst.lock=src.lock; }
+    });
+    $('#rowsInput').value = ROWS;
+    $('#colsInput').value = COLS;
+    $('#layoutInfo').textContent = `${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`;
+    $('#legendLayout').textContent = `Lavice: ${COLS} × ${ROWS} • 2 místa`;
+    renderStudents(); renderGrid();
+  }
+
+  function buildSelfContainedHtml(){
+    const state = getState();
+    const json = JSON.stringify(state);
+    const safeJson = json.replace(/<\/script>/gi, '<\\/script>');
+    const stateScript =
+      '<script id="__STATE__" type="application/json">' +
+      safeJson +
+      '</scr' + 'ipt>';
+    const html = document.documentElement.outerHTML
+      .replace(/<\/head>/i, stateScript + '</head>');
+    return html;
+  }
+  function saveAsHtml(){
+    const blob = new Blob([buildSelfContainedHtml()], {type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'zasedaci-poradek-ulozeny.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Soubor HTML se stavem uložen.');
+  }
+
+  // ====== AUTOSAVE (localStorage) ======
+  function autosave(){
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(getState())); }catch(e){}
+  }
+  function tryLoadAutosave(){
+    try{
+      const raw = localStorage.getItem(LS_KEY);
+      if(raw){ const st = JSON.parse(raw); setState(st); return true; }
+    }catch(e){}
+    return false;
+  }
+
+  // ====== WIRING UI ======
+  $('#btnAdd').addEventListener('click', ()=>{
+    const n = $('#newName').value; const g = $('#newGender').value;
+    addStudent(n,g); $('#newName').value=''; $('#newName').focus();
+  });
+  $('#newName').addEventListener('keydown', e=>{ if(e.key==='Enter') $('#btnAdd').click(); });
+
+  $('#btnClear').addEventListener('click', ()=>{
+    if(!confirm('Opravdu smazat celý seznam žáků?')) return;
+    students.splice(0,students.length);
+    seats.forEach(s=>{ s.name=null; s.gender=null; s.lock='none'; });
+    renderStudents(); renderGrid(); autosave();
+  });
+
+  $('#btnBulk').addEventListener('click', ()=>{
+    const txt = $('#bulk').value.trim();
+    if(!txt){ toast('Vlož text k importu.'); return; }
+    const lines = txt.split(/\r?\n/);
+    let ok=0, bad=0;
+    lines.forEach(line=>{
+      const parts = line.split(';');
+      if(parts.length>=2){
+        const name = parts[0].trim();
+        const g = (parts[1]||'').trim().toUpperCase();
+        if((g==='M' || g==='F') && name){ addStudent(name, g); ok++; } else { bad++; }
+      } else { bad++; }
+    });
+    $('#bulk').value=''; toast(`Import: ${ok} přidáno, ${bad} přeskočeno.`);
+  });
+
+  $('#btnGenerate').addEventListener('click', generate);
+  $('#btnUnassign').addEventListener('click', unassign);
+  $('#btnExportPrint').addEventListener('click', printPlan);
+  $('#btnExportPng').addEventListener('click', exportPng);
+  $('#btnSaveHtml').addEventListener('click', saveAsHtml);
+
+  $('#applyLayout').addEventListener('click', ()=>{
+    const r = Math.max(1, Math.min(12, parseInt($('#rowsInput').value || '1', 10)));
+    const c = Math.max(1, Math.min(8,  parseInt($('#colsInput').value || '1', 10)));
+    rebuildSeats(r, c);
+  });
+
+  // ====== INIT ======
+  document.documentElement.style.setProperty('--cols', String(COLS));
+  seats = makeEmptySeats(ROWS, COLS);
+
+  if(injectedState){
+    setState(injectedState);
+  } else if(!tryLoadAutosave()){
+    const demo = [
+      ['Jan Novák','M'], ['Petr Dvořák','M'], ['Adam Král','M'], ['Tomáš Šimek','M'], ['Lukáš Černý','M'],
+      ['Anna Svobodová','F'], ['Ema Veselá','F'], ['Klára Procházková','F'], ['Tereza Kovářová','F'], ['Nela Malá','F'],
+      ['Michal Blažek','M'], ['David Marek','M'], ['Filip Pokorný','M'], ['Matěj Horák','M'], ['Ondřej Jelínek','M'],
+      ['Karolína Hrubá','F'], ['Eliška Fialová','F'], ['Barbora Doležalová','F'], ['Sofie Holá','F'], ['Julie Vítová','F']
+    ];
+    demo.forEach(([n,g])=>addStudent(n,g));
+    rebuildSeats(ROWS, COLS);
+  }
+})();
+</script>
+</body>
+</html>
