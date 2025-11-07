@@ -29,7 +29,10 @@
   .chip{background:var(--chip);border:1px solid var(--chip-b);border-radius:999px;padding:4px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
   .dot{width:8px;height:8px;border-radius:50%}
   .dot-boy{background:#60a5fa}.dot-girl{background:#f472b6}
-  .grid{background:linear-gradient(180deg,#0b1220,#0a111d);border-radius:12px;padding:12px;height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:10px}
+
+  /* Vnitřní plánek – TABULE hned pod první řadou (žádný 1fr, nic netlačí na spodek) */
+  .grid{background:linear-gradient(180deg,#0b1220,#0a111d);border-radius:12px;padding:12px;height:100%;
+        display:grid;grid-template-rows:auto auto auto;gap:10px;align-content:start}
   .deskgrid{display:grid;grid-template-columns:repeat(var(--cols,3),1fr);gap:12px;align-content:start}
   .desk{background:#0b1424;border:1px solid #152036;border-radius:12px;padding:10px;display:grid;grid-template-rows:auto auto;gap:8px;position:relative}
   .desk::after{content:attr(data-label);position:absolute;top:8px;right:10px;font-size:11px;color:#7f8da3}
@@ -44,7 +47,7 @@
   .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0d1b32;border:1px solid #21314a;padding:10px 14px;border-radius:999px;display:none}
   .seat.drag-ok{outline:2px dashed #60a5fa; outline-offset:2px}
   .seat.drag-blocked{outline:2px dashed #ef4444; outline-offset:2px}
-  /* „TABULE“ dole v živém plánku */
+
   .board-ui{display:flex;justify-content:center}
   .board-ui .board{border:2px solid #2b364c;padding:6px 14px;font-weight:700;letter-spacing:.08em;border-radius:8px;background:#0e1a2e;color:#e6eef8}
 </style>
@@ -117,7 +120,11 @@
       <span class="chip" title="Prázdné místo je zakázané (nikdo sem nesmí)" style="border:1px solid #ef4444;color:#ffb4b4">⛔ Zakázané místo</span>
       <span class="chip" id="legendLayout">Lavice: 3 × 6 • 2 místa</span>
     </div>
+
+    <!-- Desky kreslíme shora dozadu (na obrazovce je řada 1 dole) -->
     <div id="deskgrid" class="deskgrid"></div>
+
+    <!-- TABULE hned pod první řadou -->
     <div class="board-ui"><div class="board">TABULE</div></div>
   </main>
 </div>
@@ -128,16 +135,13 @@
 (function(){
   "use strict";
 
-  // ====== STAV A MODELY ======
   let ROWS = 6;
   let COLS = 3;
 
-  // lock: 'none' | 'student' | 'blocked'
-  let seats = [];          // {id,row,col,side,name,gender,lock}
-  const students = [];     // {id,name,gender}
+  let seats = [];
+  const students = [];
   let uid = 1;
 
-  // ====== PŘÍPADNÝ PŘEDÁNÝ STAV (z „Uložit jako HTML“) ======
   let injectedState = null;
   { const el = document.getElementById('__STATE__');
     if (el && el.textContent) { try { injectedState = JSON.parse(el.textContent); } catch(e) { injectedState = null; } }
@@ -167,8 +171,8 @@
   const seatId = (r,c,side) => `R${r}C${c}${side}`;
   const byId   = id => seats.find(s=>s.id===id);
   const mateId = s  => seatId(s.row, s.col, s.side==='L'?'R':'L');
-
   function seatOfStudent(name){ return seats.find(s=>s.name===name) || null; }
+
   function canDropStudentToSeat(studentName, target){
     if (target.lock === 'blocked') return [false,'Místo je zakázané.'];
     if (target.lock === 'student' && target.name && target.name !== studentName) return [false,'Místo je uzamčeno pro jiného žáka.'];
@@ -195,7 +199,6 @@
     return true;
   }
 
-  // ====== SEATS: VYTVOŘENÍ / REBUILD ======
   function makeEmptySeats(rows, cols){
     const arr = [];
     for(let r=1;r<=rows;r++){
@@ -219,7 +222,6 @@
     renderGrid(); autosave();
   }
 
-  // ====== STUDENTS UI ======
   function renderStudents(){
     const box = $('#students'); box.innerHTML = '';
     students.forEach(st => {
@@ -270,10 +272,10 @@
     });
   }
 
-  // ====== GRID (OTOČENO: řada 1 je DOLE) ======
+  /* UI plánek (řada 1 dole) */
   function renderGrid(){
     const g = $('#deskgrid'); g.innerHTML = '';
-    for(let r=ROWS;r>=1;r--){                   // ← kreslíme od poslední řady k první
+    for(let r=ROWS;r>=1;r--){      // obrazovka: od zadní k přední; řada 1 dole
       for(let c=1;c<=COLS;c++){
         const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
         const box = el('div',{class:'desk','data-label':`Ř${r} • Sl${c}`});
@@ -342,7 +344,6 @@
     return seatEl;
   }
 
-  // ====== MENU SEDADEL ======
   function seatMenu(seat, anchor){
     const menu = el('div',{style:'position:absolute;z-index:10;background:#0d1629;border:1px solid #1a2942;border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.5);padding:10px;min-width:240px;'});
     const close = ()=>{ menu.remove(); document.removeEventListener('click', onDoc); autosave(); };
@@ -396,7 +397,7 @@
     document.body.append(menu);
   }
 
-  // ====== GENEROVÁNÍ ======
+  /* GENEROVÁNÍ (beze změn) */
   function generate(){
     const mode = $('#mode').value;
     const lockedStudentNames = new Set(seats.filter(s=>s.lock==='student' && s.name).map(s=>s.name));
@@ -507,12 +508,12 @@
     renderGrid(); autosave(); toast('Přiřazení vyčištěno (zámky a zákazy ponechány).');
   }
 
-  // ====== TISK – plánek s JMÉNY (A4 na šířku) ======
+  /* TISK – otočeno o 180° (řada 1 dole u tabule) + „měřítko 80 %“ přes scale */
   function printPlan(){
     const w = window.open('', '_blank');
 
     let gridHtml = `<div class="grid" style="display:grid;grid-template-columns:repeat(${COLS},1fr);gap:6mm">`;
-    for(let r=1;r<=ROWS;r++){
+    for(let r=ROWS;r>=1;r--){  // nejprve poslední řada, aby Ř1 byla až dole
       for(let c=1;c<=COLS;c++){
         const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
         const cell = (s) => `
@@ -528,31 +529,31 @@
     }
     gridHtml += '</div>';
 
-    const head = `
-      <title>Plánek lavic</title>
+    const css = `
       <style>
         @page { size: A4 landscape; margin: 10mm; }
         html,body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-        .header{display:flex;justify-content:center;align-items:center;margin-bottom:8mm}
+        .wrap80{transform:scale(.8); transform-origin: top left;}
+        .header,.footer{display:flex;justify-content:center;align-items:center;margin:6mm 0}
         .board{border:2px solid #000;padding:6px 14px;font-weight:700;letter-spacing:.08em}
         .blocked{background:#eee;position:relative}
         .blocked::after{content:"X";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:700}
-        .foot{margin-top:8mm;font-size:10pt;display:flex;justify-content:space-between}
+        .meta{display:flex;justify-content:space-between;font-size:10pt;margin-top:6mm}
       </style>`;
-    const board = '<div class="header"><div class="board">TABULE</div></div>';
-    const foot  = `<div class="foot"><div>${COLS} sloupce × ${ROWS} řad • 2 místa / lavice</div><div>Legenda: X = zakázané místo</div></div>`;
 
-    w.document.write(`<!doctype html><html><head>${head}</head><body>${board}${gridHtml}${foot}</body></html>`);
-    w.document.close();
-    w.focus();
-    w.print();
+    const head = `<title>Plánek lavic</title>${css}`;
+    const boardBottom = '<div class="footer"><div class="board">TABULE</div></div>';
+    const meta = `<div class="meta"><div>${COLS} sloupce × ${ROWS} řad • 2 místa / lavice</div><div>Legenda: X = zakázané místo</div></div>`;
+
+    w.document.write(`<!doctype html><html><head>${head}</head><body><div class="wrap80">${gridHtml}${boardBottom}${meta}</div></body></html>`);
+    w.document.close(); w.focus(); w.print();
   }
 
-  // ====== EXPORT PNG – tabule DOLE, řada 1 u tabule ======
+  /* PNG – tabule dole, Ř1 dole (otočeno o 180° vůči klasice) */
   function exportPng(){
     const deskW = 280, deskH = 120;
     const seatW = (deskW - 24) / 2, seatH = 54;
-    const gap   = 18, pad = 36, headH = 40, footH = 70; // footH pro TABULI dole
+    const gap   = 18, pad = 36, headH = 40, footH = 70;
 
     const W = pad*2 + COLS*deskW + (COLS-1)*gap;
     const H = pad*2 + headH + ROWS*deskH + (ROWS-1)*gap + footH;
@@ -562,39 +563,27 @@
     canvas.height = Math.max(400, H);
     const ctx = canvas.getContext('2d');
 
-    // pozadí
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle = '#000000';
-    ctx.lineWidth = 2;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#000000'; ctx.lineWidth = 2;
 
-    // „TABULE“ dole
+    /* TABULE dole */
     ctx.strokeRect((canvas.width-150)/2, canvas.height - pad - 32, 150, 32);
-    ctx.font = 'bold 16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('TABULE', canvas.width/2, canvas.height - pad - 16);
 
     function drawNameInBox(text, x, y, w, h){
-      if(!text){ return; }
-      let size = 14;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      do {
-        ctx.font = `bold ${size}px Arial`;
-        if (ctx.measureText(text).width <= w - 10 || size <= 8) break;
-        size -= 1;
-      } while (size > 8);
+      if(!text) return;
+      let size = 14; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      do { ctx.font = `bold ${size}px Arial`; if (ctx.measureText(text).width <= w - 10 || size <= 8) break; size--; } while (size > 8);
       ctx.fillText(text, x + w/2, y + h/2);
     }
 
-    // mřížka lavic – počítáme Y tak, aby Ř1 byla dole
+    /* Ř1 dole: počítáme Y odspodu */
     const topY = pad + headH;
     for(let r=1;r<=ROWS;r++){
-      const rowIndexFromTop = ROWS - r;
+      const rowIndexFromTop = ROWS - r;           // Ř1 nejníže
       const y0 = topY + rowIndexFromTop * (deskH + gap);
       let x0 = pad;
-
       for(let c=1;c<=COLS;c++){
         ctx.strokeRect(x0, y0, deskW, deskH);
         const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
@@ -604,13 +593,10 @@
           ctx.strokeRect(seatX[i], seatY, seatW, seatH);
           if(s.lock==='blocked'){
             ctx.save(); ctx.fillStyle = '#eeeeee';
-            ctx.fillRect(seatX[i], seatY, seatW, seatH);
-            ctx.restore();
+            ctx.fillRect(seatX[i], seatY, seatW, seatH); ctx.restore();
             ctx.beginPath();
-            ctx.moveTo(seatX[i]+6, seatY+6);
-            ctx.lineTo(seatX[i]+seatW-6, seatY+seatH-6);
-            ctx.moveTo(seatX[i]+seatW-6, seatY+6);
-            ctx.lineTo(seatX[i]+6, seatY+seatH-6);
+            ctx.moveTo(seatX[i]+6, seatY+6); ctx.lineTo(seatX[i]+seatW-6, seatY+seatH-6);
+            ctx.moveTo(seatX[i]+seatW-6, seatY+6); ctx.lineTo(seatX[i]+6, seatY+seatH-6);
             ctx.stroke();
           } else {
             ctx.fillStyle = '#000000';
@@ -618,18 +604,15 @@
           }
         });
 
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'alphabetic';
+        ctx.font = '10px Arial'; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
         ctx.fillText(`Ř${r} • Sl${c}`, x0 + deskW, y0 - 6);
-
         x0 += deskW + gap;
       }
     }
 
-    // patička
+    /* Meta nahoře */
     ctx.font = '12px Arial';
-    ctx.textAlign = 'left';  ctx.fillText(`${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`, pad, pad + 12); // nahoře vlevo
+    ctx.textAlign = 'left';  ctx.fillText(`${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`, pad, pad + 12);
     ctx.textAlign = 'right'; ctx.fillText(`Legenda: X = zakázané místo`, canvas.width - pad, pad + 12);
 
     const a = document.createElement('a');
@@ -639,7 +622,7 @@
     toast('PNG plánku uložen.');
   }
 
-  // ====== „ULOŽIT JAKO HTML“ ======
+  /* ULOŽIT JAKO HTML */
   function getState(){
     return {
       rows: ROWS, cols: COLS,
@@ -684,14 +667,14 @@
     toast('Soubor HTML se stavem uložen.');
   }
 
-  // ====== AUTOSAVE ======
+  /* AUTOSAVE */
   function autosave(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(getState())); }catch(e){} }
   function tryLoadAutosave(){
     try{ const raw = localStorage.getItem(LS_KEY); if(raw){ setState(JSON.parse(raw)); return true; } }catch(e){}
     return false;
   }
 
-  // ====== WIRING UI ======
+  /* WIRING */
   $('#btnAdd').addEventListener('click', ()=>{
     const n = $('#newName').value; const g = $('#newGender').value;
     addStudent(n,g); $('#newName').value=''; $('#newName').focus();
@@ -733,7 +716,7 @@
     rebuildSeats(r, c);
   });
 
-  // ====== INIT ======
+  /* INIT */
   document.documentElement.style.setProperty('--cols', String(COLS));
   seats = makeEmptySeats(ROWS, COLS);
 
