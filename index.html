@@ -29,7 +29,7 @@
   .chip{background:var(--chip);border:1px solid var(--chip-b);border-radius:999px;padding:4px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:center}
   .dot{width:8px;height:8px;border-radius:50%}
   .dot-boy{background:#60a5fa}.dot-girl{background:#f472b6}
-  .grid{background:linear-gradient(180deg,#0b1220,#0a111d);border-radius:12px;padding:12px;height:100%;display:grid;grid-template-rows:auto 1fr;gap:10px}
+  .grid{background:linear-gradient(180deg,#0b1220,#0a111d);border-radius:12px;padding:12px;height:100%;display:grid;grid-template-rows:auto 1fr auto;gap:10px}
   .deskgrid{display:grid;grid-template-columns:repeat(var(--cols,3),1fr);gap:12px;align-content:start}
   .desk{background:#0b1424;border:1px solid #152036;border-radius:12px;padding:10px;display:grid;grid-template-rows:auto auto;gap:8px;position:relative}
   .desk::after{content:attr(data-label);position:absolute;top:8px;right:10px;font-size:11px;color:#7f8da3}
@@ -44,6 +44,9 @@
   .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#0d1b32;border:1px solid #21314a;padding:10px 14px;border-radius:999px;display:none}
   .seat.drag-ok{outline:2px dashed #60a5fa; outline-offset:2px}
   .seat.drag-blocked{outline:2px dashed #ef4444; outline-offset:2px}
+  /* „TABULE“ dole v živém plánku */
+  .board-ui{display:flex;justify-content:center}
+  .board-ui .board{border:2px solid #2b364c;padding:6px 14px;font-weight:700;letter-spacing:.08em;border-radius:8px;background:#0e1a2e;color:#e6eef8}
 </style>
 </head>
 <body>
@@ -115,6 +118,7 @@
       <span class="chip" id="legendLayout">Lavice: 3 × 6 • 2 místa</span>
     </div>
     <div id="deskgrid" class="deskgrid"></div>
+    <div class="board-ui"><div class="board">TABULE</div></div>
   </main>
 </div>
 
@@ -135,17 +139,12 @@
 
   // ====== PŘÍPADNÝ PŘEDÁNÝ STAV (z „Uložit jako HTML“) ======
   let injectedState = null;
-  {
-    const el = document.getElementById('__STATE__');
-    if (el && el.textContent) {
-      try { injectedState = JSON.parse(el.textContent); } catch(e) { injectedState = null; }
-    }
+  { const el = document.getElementById('__STATE__');
+    if (el && el.textContent) { try { injectedState = JSON.parse(el.textContent); } catch(e) { injectedState = null; } }
   }
-  if (!injectedState && typeof window.__STATE__ !== 'undefined') {
-    injectedState = window.__STATE__;
-  }
+  if (!injectedState && typeof window.__STATE__ !== 'undefined') injectedState = window.__STATE__;
 
-  const LS_KEY = 'seatplan_v2'; // autosave klíč
+  const LS_KEY = 'seatplan_v2';
 
   const $ = s => document.querySelector(s);
   const el = (tag, attrs={}, ...kids) => {
@@ -169,39 +168,27 @@
   const byId   = id => seats.find(s=>s.id===id);
   const mateId = s  => seatId(s.row, s.col, s.side==='L'?'R':'L');
 
-  // ---- Pomocné pro DnD ----
-  function seatOfStudent(name){
-    return seats.find(s => s.name === name) || null;
-  }
+  function seatOfStudent(name){ return seats.find(s=>s.name===name) || null; }
   function canDropStudentToSeat(studentName, target){
-    if (target.lock === 'blocked') return [false, 'Místo je zakázané.'];
-    if (target.lock === 'student' && target.name && target.name !== studentName) return [false, 'Místo je uzamčeno pro jiného žáka.'];
+    if (target.lock === 'blocked') return [false,'Místo je zakázané.'];
+    if (target.lock === 'student' && target.name && target.name !== studentName) return [false,'Místo je uzamčeno pro jiného žáka.'];
     const src = seatOfStudent(studentName);
-    if (src && src.lock === 'student' && src.id !== target.id) {
-      return [false, 'Tento žák je uzamčen na svém místě.'];
-    }
-    return [true, ''];
+    if (src && src.lock === 'student' && src.id !== target.id) return [false,'Tento žák je uzamčen na svém místě.'];
+    return [true,''];
   }
   function moveStudentToSeat(studentName, target){
     const src = seatOfStudent(studentName);
     const dst = target;
-
     if (dst.name && dst.name !== studentName){
-      if (dst.lock === 'student' && dst.name !== studentName){
-        toast('Cílové místo je uzamčeno.'); return false;
-      }
-      if (src && src.lock === 'student'){
-        toast('Zdrojové místo je uzamčeno.'); return false;
-      }
+      if (dst.lock === 'student' && dst.name !== studentName){ toast('Cílové místo je uzamčeno.'); return false; }
+      if (src && src.lock === 'student'){ toast('Zdrojové místo je uzamčeno.'); return false; }
       const otherName = dst.name;
       const other = students.find(x=>x.name===otherName);
       const me    = students.find(x=>x.name===studentName);
-
       if (src){ src.name = otherName; src.gender = other?other.gender:null; }
       dst.name = studentName; dst.gender = me?me.gender:null;
       return true;
     }
-
     const me = students.find(x=>x.name===studentName);
     if (src){ src.name=null; src.gender=null; if(src.lock==='student') src.lock='none'; }
     dst.name = studentName; dst.gender = me?me.gender:null;
@@ -223,17 +210,13 @@
   function rebuildSeats(newRows, newCols){
     const old = seats;
     const next = makeEmptySeats(newRows, newCols);
-    next.forEach(s=>{
-      const prev = old.find(p=>p.id===s.id);
-      if(prev){ s.name=prev.name; s.gender=prev.gender; s.lock=prev.lock; }
-    });
+    next.forEach(s=>{ const prev = old.find(p=>p.id===s.id); if(prev){ s.name=prev.name; s.gender=prev.gender; s.lock=prev.lock; }});
     seats = next;
     ROWS = newRows; COLS = newCols;
     document.documentElement.style.setProperty('--cols', String(COLS));
     $('#layoutInfo').textContent = `${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`;
     $('#legendLayout').textContent = `Lavice: ${COLS} × ${ROWS} • 2 místa`;
-    renderGrid();
-    autosave();
+    renderGrid(); autosave();
   }
 
   // ====== STUDENTS UI ======
@@ -241,18 +224,14 @@
     const box = $('#students'); box.innerHTML = '';
     students.forEach(st => {
       const name = el('input',{
-        type:'text',
-        value:st.name,
-        draggable:true,
+        type:'text', value:st.name, draggable:true,
         ondragstart:e=>{
           const payload = JSON.stringify({type:'student', id: st.id});
           e.dataTransfer.setData('application/x-seatplan', payload);
-          e.dataTransfer.setData('text/plain', payload); // fallback pro některé prohlížeče
+          e.dataTransfer.setData('text/plain', payload);
           e.dataTransfer.effectAllowed = 'move';
         },
-        oninput:e=>{
-          st.name=e.target.value; syncLockedGenders(); renderGrid(); updateCounts(); autosave();
-        }
+        oninput:e=>{ st.name=e.target.value; syncLockedGenders(); renderGrid(); updateCounts(); autosave(); }
       });
       const gen = el('select',{onchange:e=>{ st.gender=e.target.value; syncLockedGenders(); renderGrid(); updateCounts(); autosave(); }},
         el('option',{value:'M', ...(st.gender==='M'?{selected:true}:{})}, 'Kluk'),
@@ -276,12 +255,7 @@
   function removeStudent(id){
     const st = students.find(s=>s.id===id);
     if(st){
-      seats.forEach(seat=>{
-        if(seat.name === st.name){
-          seat.name = null; seat.gender = null;
-          if(seat.lock==='student') seat.lock='none';
-        }
-      });
+      seats.forEach(seat=>{ if(seat.name === st.name){ seat.name = null; seat.gender = null; if(seat.lock==='student') seat.lock='none'; }});
     }
     const i = students.findIndex(s=>s.id===id);
     if(i>=0) students.splice(i,1);
@@ -296,10 +270,10 @@
     });
   }
 
-  // ====== GRID ======
+  // ====== GRID (OTOČENO: řada 1 je DOLE) ======
   function renderGrid(){
     const g = $('#deskgrid'); g.innerHTML = '';
-    for(let r=1;r<=ROWS;r++){
+    for(let r=ROWS;r>=1;r--){                   // ← kreslíme od poslední řady k první
       for(let c=1;c<=COLS;c++){
         const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
         const box = el('div',{class:'desk','data-label':`Ř${r} • Sl${c}`});
@@ -310,10 +284,7 @@
     }
   }
   function renderSeat(s){
-    const cls =
-      s.lock==='student' ? 'seat lock-student' :
-      s.lock==='blocked' ? 'seat lock-block' : 'seat';
-
+    const cls = s.lock==='student' ? 'seat lock-student' : s.lock==='blocked' ? 'seat lock-block' : 'seat';
     const seatEl = el('div',{class:cls});
     if (s.name) seatEl.setAttribute('draggable','true');
 
@@ -324,24 +295,20 @@
 
     seatEl.append(el('div',{class:'name'}, s.name || (s.lock==='blocked'?'⛔ —':'—')));
     seatEl.append(el('div',{class:'sub'}, subText));
-
     seatEl.addEventListener('click', ()=> seatMenu(s, seatEl));
 
-    // DRAG start z místa (fallback MIME)
     seatEl.addEventListener('dragstart', e=>{
       if (!s.name) { e.preventDefault(); return; }
       const payload = JSON.stringify({type:'seat', seatId: s.id, studentName: s.name});
       e.dataTransfer.setData('application/x-seatplan', payload);
-      e.dataTransfer.setData('text/plain', payload); // fallback
+      e.dataTransfer.setData('text/plain', payload);
       e.dataTransfer.effectAllowed = 'move';
     });
 
-    // DRAGOVER: vždy preventDefault + dropEffect, vizuální indikace validity
     seatEl.addEventListener('dragover', e=>{
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       seatEl.classList.remove('drag-ok','drag-blocked');
-
       const raw = e.dataTransfer.getData('application/x-seatplan') || e.dataTransfer.getData('text/plain');
       if(!raw) return;
       try{
@@ -354,16 +321,10 @@
         seatEl.classList.add(ok ? 'drag-ok' : 'drag-blocked');
       }catch(_){}
     });
-
-    seatEl.addEventListener('dragleave', ()=>{
-      seatEl.classList.remove('drag-ok','drag-blocked');
-    });
-
-    // DROP: načti payload (s fallbackem), ověř a přesuň
+    seatEl.addEventListener('dragleave', ()=> seatEl.classList.remove('drag-ok','drag-blocked'));
     seatEl.addEventListener('drop', e=>{
       e.preventDefault();
       seatEl.classList.remove('drag-ok','drag-blocked');
-
       const raw = e.dataTransfer.getData('application/x-seatplan') || e.dataTransfer.getData('text/plain');
       if(!raw) return;
       try{
@@ -372,13 +333,9 @@
         if(data.type==='student'){ const st = students.find(x=>x.id===data.id); studentName = st?st.name:null; }
         else if(data.type==='seat'){ studentName = data.studentName; }
         if(!studentName) return;
-
         const [ok,msg] = canDropStudentToSeat(studentName, s);
         if(!ok){ if(msg) toast(msg); return; }
-
-        if (moveStudentToSeat(studentName, s)){
-          renderGrid(); autosave();
-        }
+        if (moveStudentToSeat(studentName, s)){ renderGrid(); autosave(); }
       }catch(_){}
     });
 
@@ -427,11 +384,8 @@
     }}, seat.lock==='student' ? 'Odemknout žáka' : 'Uzamknout tohoto žáka');
 
     const btnBlockEmpty = el('button',{style:'width:100%;', onclick:()=>{
-      if(seat.lock==='blocked'){
-        seat.lock='none';
-      } else {
-        seat.name=null; seat.gender=null; seat.lock='blocked';
-      }
+      if(seat.lock==='blocked'){ seat.lock='none'; }
+      else { seat.name=null; seat.gender=null; seat.lock='blocked'; }
       renderGrid(); close();
     }}, seat.lock==='blocked' ? 'Povolit místo (zrušit zákaz)' : 'Zamknout prázdné místo (zakázat)');
 
@@ -444,7 +398,7 @@
 
   // ====== GENEROVÁNÍ ======
   function generate(){
-    const mode = $('#mode').value; // 'mixed' | 'any'
+    const mode = $('#mode').value;
     const lockedStudentNames = new Set(seats.filter(s=>s.lock==='student' && s.name).map(s=>s.name));
     const pool = students.filter(st => !lockedStudentNames.has(st.name));
 
@@ -459,11 +413,7 @@
     });
 
     const desks = [];
-    for(let r=1;r<=ROWS;r++){
-      for(let c=1;c<=COLS;c++){
-        desks.push({L:byId(seatId(r,c,'L')), R:byId(seatId(r,c,'R'))});
-      }
-    }
+    for(let r=1;r<=ROWS;r++){ for(let c=1;c<=COLS;c++){ desks.push({L:byId(seatId(r,c,'L')), R:byId(seatId(r,c,'R'))}); } }
 
     if(mode==='mixed'){
       let conflict = 0, needM = 0, needF = 0;
@@ -476,16 +426,13 @@
       });
       if(conflict>0){ toast('Konflikt: v jedné lavici jsou uzamčeni dva stejného pohlaví (režim kluk–holka).'); return; }
       const free = pool.reduce((a,s)=>{ s.gender==='M'?a.M++:a.F++; return a; }, {M:0,F:0});
-      if(free.M < needM || free.F < needF){
-        toast('Nedostatek kluků/holek pro režim kluk–holka vzhledem k uzamčeným místům.'); return;
-      }
+      if(free.M < needM || free.F < needF){ toast('Nedostatek kluků/holek pro režim kluk–holka vzhledem k uzamčeným místům.'); return; }
     }
 
     const assigned = new Map();
     const freeStudents = pool.slice(); shuffle(freeStudents);
 
-    const allSeats = [];
-    desks.forEach(d=>{ allSeats.push(d.L, d.R); });
+    const allSeats = []; desks.forEach(d=>{ allSeats.push(d.L, d.R); });
     const toFill = allSeats.filter(s => !(s.lock==='student' && s.name) && s.lock!=='blocked');
 
     seats.forEach(s=>{
@@ -499,7 +446,7 @@
       for(const v of assigned.values()){ if(v.name===student.name) return false; }
       if(mode==='mixed'){
         const mate = byId(mateId(seat));
-        const mVal = assigned.get(mate.id) || ( (mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null );
+        const mVal = assigned.get(mate.id) || ((mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null);
         if(mVal && mVal.gender && mVal.gender === student.gender) return false;
       }
       return true;
@@ -511,7 +458,7 @@
       let candidates = freeStudents.filter(st => canPlace(seat, st));
       if(mode==='mixed'){
         const mate = byId(mateId(seat));
-        const mVal = assigned.get(mate.id) || ( (mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null );
+        const mVal = assigned.get(mate.id) || ((mate.lock==='student' && mate.name) ? {name:mate.name, gender:mate.gender} : null);
         if(mVal && mVal.gender){
           const need = mVal.gender==='M'?'F':'M';
           candidates = candidates.sort((a,b)=> (a.gender===need? -1:0) - (b.gender===need? -1:0));
@@ -543,11 +490,8 @@
 
     seats.forEach(s=>{
       const v = assigned.get(s.id);
-      if(v){
-        s.name = v.name; s.gender = v.gender;
-      } else if(!(s.lock==='student' && s.name) && s.lock!=='blocked'){
-        s.name = null; s.gender = null;
-      }
+      if(v){ s.name = v.name; s.gender = v.gender; }
+      else if(!(s.lock==='student' && s.name) && s.lock!=='blocked'){ s.name = null; s.gender = null; }
     });
 
     renderGrid(); autosave();
@@ -563,7 +507,7 @@
     renderGrid(); autosave(); toast('Přiřazení vyčištěno (zámky a zákazy ponechány).');
   }
 
-  // ====== TISK – plánek s JMÉNY ======
+  // ====== TISK – plánek s JMÉNY (A4 na šířku) ======
   function printPlan(){
     const w = window.open('', '_blank');
 
@@ -604,11 +548,11 @@
     w.print();
   }
 
-  // ====== EXPORT PNG – kreslení s JMÉNY ======
+  // ====== EXPORT PNG – tabule DOLE, řada 1 u tabule ======
   function exportPng(){
     const deskW = 280, deskH = 120;
     const seatW = (deskW - 24) / 2, seatH = 54;
-    const gap   = 18, pad = 36, headH = 70, footH = 40;
+    const gap   = 18, pad = 36, headH = 40, footH = 70; // footH pro TABULI dole
 
     const W = pad*2 + COLS*deskW + (COLS-1)*gap;
     const H = pad*2 + headH + ROWS*deskH + (ROWS-1)*gap + footH;
@@ -624,12 +568,12 @@
     ctx.fillStyle = '#000000';
     ctx.lineWidth = 2;
 
-    // nadpis "TABULE"
-    ctx.strokeRect((canvas.width-150)/2, pad, 150, 32);
+    // „TABULE“ dole
+    ctx.strokeRect((canvas.width-150)/2, canvas.height - pad - 32, 150, 32);
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('TABULE', canvas.width/2, pad+16);
+    ctx.fillText('TABULE', canvas.width/2, canvas.height - pad - 16);
 
     function drawNameInBox(text, x, y, w, h){
       if(!text){ return; }
@@ -644,10 +588,13 @@
       ctx.fillText(text, x + w/2, y + h/2);
     }
 
-    // mřížka lavic
-    let y0 = pad + headH;
+    // mřížka lavic – počítáme Y tak, aby Ř1 byla dole
+    const topY = pad + headH;
     for(let r=1;r<=ROWS;r++){
+      const rowIndexFromTop = ROWS - r;
+      const y0 = topY + rowIndexFromTop * (deskH + gap);
       let x0 = pad;
+
       for(let c=1;c<=COLS;c++){
         ctx.strokeRect(x0, y0, deskW, deskH);
         const L = byId(seatId(r,c,'L')), R = byId(seatId(r,c,'R'));
@@ -656,8 +603,7 @@
         [L,R].forEach((s, i)=>{
           ctx.strokeRect(seatX[i], seatY, seatW, seatH);
           if(s.lock==='blocked'){
-            ctx.save();
-            ctx.fillStyle = '#eeeeee';
+            ctx.save(); ctx.fillStyle = '#eeeeee';
             ctx.fillRect(seatX[i], seatY, seatW, seatH);
             ctx.restore();
             ctx.beginPath();
@@ -679,13 +625,12 @@
 
         x0 += deskW + gap;
       }
-      y0 += deskH + gap;
     }
 
     // patička
     ctx.font = '12px Arial';
-    ctx.textAlign = 'left';  ctx.fillText(`${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`, pad, canvas.height - pad - 10);
-    ctx.textAlign = 'right'; ctx.fillText(`Legenda: X = zakázané místo`, canvas.width - pad, canvas.height - pad - 10);
+    ctx.textAlign = 'left';  ctx.fillText(`${COLS} sloupce × ${ROWS} řad • 2 místa / lavice`, pad, pad + 12); // nahoře vlevo
+    ctx.textAlign = 'right'; ctx.fillText(`Legenda: X = zakázané místo`, canvas.width - pad, pad + 12);
 
     const a = document.createElement('a');
     a.download = 'planek-lavic.png';
@@ -694,7 +639,7 @@
     toast('PNG plánku uložen.');
   }
 
-  // ====== „ULOŽIT JAKO HTML“ (samostatný soubor se stavem) ======
+  // ====== „ULOŽIT JAKO HTML“ ======
   function getState(){
     return {
       rows: ROWS, cols: COLS,
@@ -725,11 +670,8 @@
     const json = JSON.stringify(state);
     const safeJson = json.replace(/<\/script>/gi, '<\\/script>');
     const stateScript =
-      '<script id="__STATE__" type="application/json">' +
-      safeJson +
-      '</scr' + 'ipt>';
-    const html = document.documentElement.outerHTML
-      .replace(/<\/head>/i, stateScript + '</head>');
+      '<script id="__STATE__" type="application/json">' + safeJson + '</scr' + 'ipt>';
+    const html = document.documentElement.outerHTML.replace(/<\/head>/i, stateScript + '</head>');
     return html;
   }
   function saveAsHtml(){
@@ -742,15 +684,10 @@
     toast('Soubor HTML se stavem uložen.');
   }
 
-  // ====== AUTOSAVE (localStorage) ======
-  function autosave(){
-    try{ localStorage.setItem(LS_KEY, JSON.stringify(getState())); }catch(e){}
-  }
+  // ====== AUTOSAVE ======
+  function autosave(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(getState())); }catch(e){} }
   function tryLoadAutosave(){
-    try{
-      const raw = localStorage.getItem(LS_KEY);
-      if(raw){ const st = JSON.parse(raw); setState(st); return true; }
-    }catch(e){}
+    try{ const raw = localStorage.getItem(LS_KEY); if(raw){ setState(JSON.parse(raw)); return true; } }catch(e){}
     return false;
   }
 
